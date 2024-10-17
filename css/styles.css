@@ -1,0 +1,9 @@
+html, body {
+    height: 100%; /* Make sure html and body take up the full height */
+    margin: 0; /* Remove default margin */
+}
+
+#map {
+    height: 100%; /* Set the height of the map */
+    width: 100%; /* Set the width of the map */
+}
