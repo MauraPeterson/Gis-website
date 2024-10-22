@@ -1,5 +1,14 @@
 var incomeData = {};
+var priceAsked = {};
+var priceAskedAggregate = {};
+
+const incomeDataURL = "https://api.census.gov/data/2023/acs/acs1/subject?get=NAME,S1903_C03_001E&for=county:*&in=state:08";
+//const priceAskedURL = "https://api.census.gov/data/2022/acs/acs5?get=group(B25085)&ucgid=pseudo(0100000US$0500000)";
+const priceAskedURL = "https://api.census.gov/data/2022/acs/acs5?get=NAME,B25085_001E&ucgid=pseudo(0100000US$0500000)";
+const priceAskedAggragateURL = "";
+
 var geoJsonLayers = []; 
+
 
 // Initialize the map
 var map = L.map('map').setView([38, -99.59], 5);
@@ -88,14 +97,12 @@ function encodePath(filePath) {
 
 // Fetch income data and then load GeoJSON
 async function initializeMap() {
-    await fetchIncomeData();
-
+    incomeData = await fetchData(incomeDataURL);
+    priceAsked = await fetchData(priceAskedURL);
     // Loop through each county file and call the loadGeoJSON function
     countyFiles.forEach(filePath => {
         loadGeoJSON(filePath);
     });
-
-    
 }
 
 function loadGeoJSON(filePath) {
@@ -108,30 +115,43 @@ function loadGeoJSON(filePath) {
                 onEachFeature: function (feature, layer) {
                     const countyName = feature.properties.name;
                     const medianIncome = incomeData[countyName] || "Data not available";
-                    layer.bindPopup('County: ' + countyName + '<br>Median Income: ' + medianIncome);
+                    const unitsSold = priceAsked[countyName] || "Data not available";
+                    layer.bindPopup('County: ' + countyName + '<br>Median Income: ' + medianIncome + '<br>Units Sold: ' + unitsSold);
                 }
             }).addTo(map);
 
             geoJsonLayers.push(layer);
-            console.log(geoJsonLayers.length);
             
         })
         .catch(error => console.error('Error loading GeoJSON:', error));
 }
 
-async function fetchIncomeData() {
-    const url = "https://api.census.gov/data/2023/acs/acs1/subject?get=NAME,S1903_C03_001E&for=county:*&in=state:08";
-    const response = await fetch(url);
-    const data = await response.json();
+async function fetchData(url) {
+    
+    try {
+        const response = await fetch(url);
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const data = await response.json();
 
-    // Convert the response to a more usable format
-    incomeData = {};
-    data.slice(1).forEach(row => {
-        const countyName = row[0].replace(/ County, Colorado/, ''); // County name
-        const medianIncome = row[1]; // Median income
-        incomeData[countyName] = medianIncome;
-    });
-    return incomeData;
+        // Convert the response to a more usable format
+        const thisData = {};
+        data.slice(1).forEach(row => {
+            if (row[0].indexOf(" County, Colorado") != -1) {
+                const countyName = row[0].replace(/ County, Colorado/, ''); // County name
+                const row1 = row[1]; 
+                console.log(countyName + ": " + row1);
+                thisData[countyName] = row1;
+            }
+        });
+        
+        return thisData;
+
+    } catch (error) {
+        console.error("Error fetching data:", error);
+    }
 }
 
 // Function to change colors based on income
@@ -139,7 +159,6 @@ function applyIncomeColors() {
     console.log("color: " +geoJsonLayers.length);
     
     geoJsonLayers.forEach(layer => {
-        console.log(layer.options);
         layer.setStyle(function (feature) {
             const countyName = feature.properties.name.replace(/ County, Colorado/, '');
             const medianIncome = incomeData[countyName] || 0; // Get income data
@@ -148,6 +167,33 @@ function applyIncomeColors() {
     });
 }
 
+function applySoldColors() {
+    console.log("color: " + geoJsonLayers.length);
+    var max = Math.max(...Object.values(priceAsked))
+    var min = Math.min(...Object.values(priceAsked))
+
+    console.log("max: " + max + ", min: " + min);
+    geoJsonLayers.forEach(layer => {
+        layer.setStyle(function (feature) {
+            const countyName = feature.properties.name.replace(/ County, Colorado/, '');
+            const data = priceAsked[countyName] || 0; // Get income data
+            return { color: getSoldColor(data, max, min) }; // Set color based on income
+        });
+    });
+}
+
+function getSoldColor(data, max, min) {
+    var range = max - min;
+    console.log( max - (range * (1 / 8)));
+    return data > max - (range * (1/8)) ? '#800026' : // Dark red
+        data > max - range * (2/8) ? '#BD0026' :
+            data > max - range * (3/8) ? '#E31A1C' :
+                data > max - range * (4 / 8) ? '#FC4E2A' :
+                    data > max - range * (5 / 8) ? '#FD8D3C' :
+                        data > max - range * (6 / 8) ? '#FEB24C' :
+                            data > max - (range * (7 / 8)) ? '#FED976' :
+                                '#FFEDA0'; // Light yellow
+}
 
 function getColor(income) {
     return income > 100000 ? '#800026' : // Dark red
@@ -163,4 +209,5 @@ function getColor(income) {
 initializeMap();
 // Apply colors based on income after all GeoJSON is loaded
 // Apply colors based on income after all GeoJSON is loaded
-document.getElementById('applyColorsBtn').addEventListener('click', applyIncomeColors);
+document.getElementById('incomeBtn').addEventListener('click', applyIncomeColors);
+document.getElementById('unitsSoldBtn').addEventListener('click', applySoldColors);
