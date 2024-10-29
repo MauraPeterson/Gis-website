@@ -25,7 +25,7 @@ window.addEventListener('resize', function () {
 async function initializeMap() {
   //incomeData = await fetchData(incomeDataURL);
   //priceAsked = await fetchData(priceAskedURL);
-  resetMap();
+  resetMap(0,0,2);
   loadGeoJSON("resources/world.geo.json-master/countries" + geoFileType);
 
   //ColoradoCounties.forEach(county => {
@@ -37,7 +37,8 @@ function resetMap(lat, long, zoom) {
   if (map) {
     map.remove();
   }
-  map = L.map('map').setView([38, -99.59], 5);
+  console.log(lat + ", " + long + ", "+ zoom)
+  map = L.map('map').setView([lat, long], zoom);
 
   // Add OpenStreetMap tile layer
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -46,16 +47,50 @@ function resetMap(lat, long, zoom) {
   }).addTo(map);
 }
 
+function showPheonix() {
+  loadGeoJSON("resources/world.geo.json-master/countries/" + event.target.feature.id + "/" + states[i].code + geoFileType);
+
+}
+
+function loadStates(event) {
+  var states = event.target.feature.properties.states;
+  console.log(states.length);
+  for (var i = 0; i < states.length; i++) {
+    console.log("resources/world.geo.json-master/countries/" + event.target.feature.id + "/" + states[i].code + geoFileType);
+    loadGeoJSON("resources/world.geo.json-master/countries/" + event.target.feature.id + "/" + states[i].code + geoFileType);
+  }
+}
+
+function loadCounties(event) {
+  var counties = event.target.feature.properties.counties;
+  console.log(event);
+  for (var i = 0; i < counties.length; i++) {
+    console.log("resources/world.geo.json-master/countries/" + event.target.feature.properties.country + "/" + event.target.feature.id + "/" + counties[i].name + geoFileType);
+    loadGeoJSON("resources/world.geo.json-master/countries/" + event.target.feature.properties.country + "/" + event.target.feature.id + "/" + counties[i].name + geoFileType);
+  }
+}
+
 function layerHandler(e) {
   var event = e;
+  console.log(event.target.feature.properties);
   console.log(event);
-  var lat = event.target._renderer._center.lat;
-  var long = event.target._renderer._center.long;
+  var lat = event.latlng.lat;
+  var long = event.latlng.lng;
   var zoom = 3;
   resetMap(lat, long, zoom);
   geoJsonLayers = [];
-  console.log("resources/world.geo.json-master/countries/" + event.target.feature.id + geoFileType);
-  loadGeoJSON("resources/world.geo.json-master/countries/" + event.target.feature.id + geoFileType);
+  if (event.target.feature.properties.kind == "Country") {
+    loadStates(event);
+  } else if (event.target.feature.properties.kind == "State") {
+    console.log("State");
+    loadCounties(event)
+  } else {
+
+    console.log("resources/world.geo.json-master/countries/" + event.target.feature.id + geoFileType);
+    loadGeoJSON("resources/world.geo.json-master/countries/" + event.target.feature.id + geoFileType);
+  }
+
+  
 }
 
 function loadGeoJSON(filePath) {
@@ -149,3 +184,4 @@ initializeMap();
 // Apply colors based on income after all GeoJSON is loaded
 document.getElementById('incomeBtn').addEventListener('click', () => { applyColors(incomeDataURL, "Median Income") });
 document.getElementById('unitsSoldBtn').addEventListener('click', () => { applyColors(priceAskedURL, "Units Sold") });
+document.getElementById('Pheonix').addEventListener('click', () => { showPheonix});

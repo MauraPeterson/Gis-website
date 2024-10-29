@@ -3,6 +3,7 @@
     "type": "Feature",
     "id": "USA",
     "properties": {
+      "kind": "Country",
       "name": "United States of America",
       "states": [
         {
