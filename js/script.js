@@ -9,6 +9,7 @@ const incomeDataURL = "https://api.census.gov/data/2023/acs/acs1/subject?get=NAM
 const priceAskedURL = "https://api.census.gov/data/2022/acs/acs5?get=NAME,B25085_001E&ucgid=pseudo(0100000US$0500000)";
 const priceAskedAggragateURL = "";
 
+
 const baseURL = "resources/world.geo.json-master/countries/USA/CO/";
 const geoFileType = ".geo.json";
 
@@ -47,9 +48,61 @@ function resetMap(lat, long, zoom) {
   }).addTo(map);
 }
 
-function showPheonix() {
-  loadGeoJSON("resources/world.geo.json-master/countries/" + event.target.feature.id + "/" + states[i].code + geoFileType);
+// Function to check if a tract intersects with the Phoenix boundary
+function intersects(tractGeometry, phoenixBoundaryData) {
+  const tractCoordinates = tractGeometry.coordinates[0];
+  // Check if the tract has enough coordinates
+  if (tractCoordinates.length < 4 || tractGeometry.type !== "Polygon") {
+    console.warn('Tract has insufficient coordinates:', tractCoordinates);
+    return false; // Skip this tract
+  } 
+  const phoenixPolygon = turf.multiPolygon(phoenixBoundaryData.features[0].geometry.coordinates);
+  const tractPolygon = turf.polygon([tractCoordinates]);
+  const doesIntersect = turf.booleanContains(phoenixPolygon, tractPolygon) || turf.booleanOverlap(phoenixPolygon, tractPolygon);
+  console.log(`Tract intersects: ${doesIntersect}`); // Log intersection result
+  return doesIntersect;
+}
 
+async function showPhoenix() {
+  resetMap(33.5, -112, 10);
+  try {
+    console.log("Loading Phoenix boundary...");
+    const phoenixResponse = await fetch("resources/cities/phoenix.json");
+    const phoenixBoundaryData = await phoenixResponse.json();
+
+    // Add Phoenix boundary to the map
+    const phoenixLayer = L.geoJSON(phoenixBoundaryData).addTo(map);
+
+    console.log("Loading census tracts...");
+    const censusResponse = await fetch('resources/census-tracts/AZ.json'); // Path to your census tracts GeoJSON
+    const censusTractsData = await censusResponse.json();
+      var azCensusTractCount = 0;
+      var phoenixCensusTractCount = 0;
+
+    // Create a layer for the census tracts that overlap with Phoenix
+    const overlappingTracts = L.geoJSON(censusTractsData, {
+      filter: function (feature) {
+        azCensusTractCount++;
+        return intersects(feature.geometry, phoenixBoundaryData);
+      },
+      style: function (feature) {
+        return {
+          color: '#FFFF00', // Yellow color for the overlapping tracts
+          weight: 2,
+          fillOpacity: 0.5 // Adjust opacity as needed
+        };
+      },
+      onEachFeature: function (feature, layer) {
+        phoenixCensusTractCount++;
+        layer.bindPopup(feature.properties.name || 'No name available'); // Ensure there's a fallback
+      }
+    }).addTo(map);
+    console.log("AZ Census Tract Count: " + azCensusTractCount);
+    console.log("Phoenix Census Tract Count: " + phoenixCensusTractCount);
+    console.log("Phoenix census tracts loaded successfully.");
+  } catch (error) {
+    console.error('Error loading Phoenix or census tracts:', error);
+  }
 }
 
 function loadStates(event) {
@@ -72,7 +125,7 @@ function loadCounties(event) {
 
 function layerHandler(e) {
   var event = e;
-  console.log(event.target.feature.properties);
+  console.log(event.target.feature.properties.kind);
   console.log(event);
   var lat = event.latlng.lat;
   var long = event.latlng.lng;
@@ -84,13 +137,34 @@ function layerHandler(e) {
   } else if (event.target.feature.properties.kind == "State") {
     console.log("State");
     loadCounties(event)
+  } else if (event.target.feature.properties.kind == "county") {
+    loadGeoJSON('resources/census-tracts/AZ.json');
   } else {
-
     console.log("resources/world.geo.json-master/countries/" + event.target.feature.id + geoFileType);
     loadGeoJSON("resources/world.geo.json-master/countries/" + event.target.feature.id + geoFileType);
   }
 
   
+}
+
+function loadShapeFile() {
+  fetch('resources/cb_2023_04_bg_500k.json')
+    .then(response => {
+      if (!response.ok) {
+        throw new Error('Network response was not ok');
+      }
+      return response.json();
+    })
+    .then(data => {
+      console.log(data);
+      // Add GeoJSON layer to the map
+      L.geoJSON(data, {
+        onEachFeature: function (feature, layer) {
+          layer.bindPopup(feature.properties.name); // Adjust the property to display in popup
+        }
+      }).addTo(map);
+    })
+    .catch(error => console.error('Error loading GeoJSON:', error));
 }
 
 function loadGeoJSON(filePath) {
@@ -184,4 +258,4 @@ initializeMap();
 // Apply colors based on income after all GeoJSON is loaded
 document.getElementById('incomeBtn').addEventListener('click', () => { applyColors(incomeDataURL, "Median Income") });
 document.getElementById('unitsSoldBtn').addEventListener('click', () => { applyColors(priceAskedURL, "Units Sold") });
-document.getElementById('Pheonix').addEventListener('click', () => { showPheonix});
+document.getElementById('phoenixBtn').addEventListener('click', () => { showPhoenix() });
