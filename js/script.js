@@ -1,18 +1,9 @@
-import { ColoradoCounties } from './URL/ColoradoCounties.js';
-
-var incomeData = {};
-var priceAsked = {};
-var priceAskedAggregate = {};
-
 const incomeDataURL = "https://api.census.gov/data/2023/acs/acs1/subject?get=NAME,S1903_C03_001E&for=county:*&in=state:08";
 //const priceAskedURL = "https://api.census.gov/data/2022/acs/acs5?get=group(B25085)&ucgid=pseudo(0100000US$0500000)";
 const priceAskedURL = "https://api.census.gov/data/2022/acs/acs5?get=NAME,B25085_001E&ucgid=pseudo(0100000US$0500000)";
-const priceAskedAggragateURL = "";
 
-
-const baseURL = "resources/world.geo.json-master/countries/USA/CO/";
 const geoFileType = ".geo.json";
-
+var intersectingPlaces;
 var geoJsonLayers = [];
 
 var map;
@@ -59,7 +50,6 @@ function intersects(tractGeometry, phoenixBoundaryData) {
   const phoenixPolygon = turf.multiPolygon(phoenixBoundaryData.features[0].geometry.coordinates);
   const tractPolygon = turf.polygon([tractCoordinates]);
   const doesIntersect = turf.booleanContains(phoenixPolygon, tractPolygon) || turf.booleanOverlap(phoenixPolygon, tractPolygon);
-  console.log(`Tract intersects: ${doesIntersect}`); // Log intersection result
   return doesIntersect;
 }
 
@@ -76,8 +66,9 @@ async function showPhoenix() {
     console.log("Loading census tracts...");
     const censusResponse = await fetch('resources/census-tracts/AZ.json'); // Path to your census tracts GeoJSON
     const censusTractsData = await censusResponse.json();
-      var azCensusTractCount = 0;
-      var phoenixCensusTractCount = 0;
+    var azCensusTractCount = 0;
+    var phoenixCensusTractCount = 0;
+    const intersectingTracts = [];
 
     // Create a layer for the census tracts that overlap with Phoenix
     const overlappingTracts = L.geoJSON(censusTractsData, {
@@ -86,13 +77,17 @@ async function showPhoenix() {
         return intersects(feature.geometry, phoenixBoundaryData);
       },
       style: function (feature) {
+
         return {
           color: '#FFFF00', // Yellow color for the overlapping tracts
           weight: 2,
           fillOpacity: 0.5 // Adjust opacity as needed
+
         };
       },
       onEachFeature: function (feature, layer) {
+        console.log(feature.properties.TRACTCE);
+        intersectingTracts.push(feature.properties.TRACTCE);
         phoenixCensusTractCount++;
         layer.bindPopup(feature.properties.name || 'No name available'); // Ensure there's a fallback
       }
@@ -100,10 +95,34 @@ async function showPhoenix() {
     console.log("AZ Census Tract Count: " + azCensusTractCount);
     console.log("Phoenix Census Tract Count: " + phoenixCensusTractCount);
     console.log("Phoenix census tracts loaded successfully.");
+    phoenixBoundaryData.intersectingTractIds = intersectingTracts;
+    console.log(intersectingTracts);
+    intersectingPlaces = intersectingTracts;
   } catch (error) {
     console.error('Error loading Phoenix or census tracts:', error);
   }
 }
+
+async function writeIntersects() {
+  try {
+    console.log(intersectingPlaces);
+    fetch('http://localhost:3000/save-phoenix-data', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(intersectingPlaces),
+    })
+      .then(response => {
+        if (!response.ok) throw new Error('Failed to save data');
+        console.log('Data saved successfully');
+      })
+
+  } catch (error) {
+    console.error('Error saving data:', error);
+  }
+}
+
 
 function loadStates(event) {
   var states = event.target.feature.properties.states;
@@ -259,3 +278,4 @@ initializeMap();
 document.getElementById('incomeBtn').addEventListener('click', () => { applyColors(incomeDataURL, "Median Income") });
 document.getElementById('unitsSoldBtn').addEventListener('click', () => { applyColors(priceAskedURL, "Units Sold") });
 document.getElementById('phoenixBtn').addEventListener('click', () => { showPhoenix() });
+  document.getElementById('writeBtn').addEventListener('click', () => { writeIntersects() });
