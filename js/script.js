@@ -39,6 +39,45 @@ function resetMap(lat, long, zoom) {
   }).addTo(map);
 }
 
+async function loadPhoenixUpdated() {
+  const phoenixUpResponse = await fetch("resources/updated/phoenix_updated.json");
+  const phoenixTractsData = await phoenixUpResponse.json();
+
+  const CensusTractResponse = await fetch("resources/census-tracts/AZ.json");
+  const censusTractsData = await CensusTractResponse.json();
+
+  const phoenixResponse = await fetch("resources/cities/phoenix.json");
+  const phoenixBoundaryData = await phoenixResponse.json();
+
+  censusTractsData.features.forEach(feature => {
+    if (phoenixTractsData.GEOIDS.includes(feature.properties.GEOID)) {
+      addFeature(feature, phoenixBoundaryData);
+
+    }
+  });
+
+}
+
+function addFeature(features, regionData) {
+  L.geoJSON(features, {
+    
+    style: function (feature) {
+
+      return {
+        color: '#FFFF00', // Yellow color for the overlapping tracts
+        weight: 2,
+        fillOpacity: 0.5 // Adjust opacity as needed
+
+      };
+    },
+    onEachFeature: function (feature, layer) {
+      const name = feature.properties.NAMELSAD || 'No name available';
+      const tractce = feature.properties.TRACTCE || 'No tractce available';
+      layer.bindPopup("Name: " + name + "<br>TractCE: " + tractce); 
+    }
+  }).addTo(map);
+}
+
 // Function to check if a tract intersects with the Phoenix boundary
 function intersects(tractGeometry, phoenixBoundaryData) {
   const tractCoordinates = tractGeometry.coordinates[0];
@@ -86,8 +125,8 @@ async function showPhoenix() {
         };
       },
       onEachFeature: function (feature, layer) {
-        console.log(feature.properties.TRACTCE);
-        intersectingTracts.push(feature.properties.TRACTCE);
+        console.log(feature.properties.GEOID);
+        intersectingTracts.push(feature.properties.GEOID);
         phoenixCensusTractCount++;
         layer.bindPopup(feature.properties.name || 'No name available'); // Ensure there's a fallback
       }
@@ -105,13 +144,16 @@ async function showPhoenix() {
 
 async function writeIntersects() {
   try {
-    console.log(intersectingPlaces);
+
+    const dataToSave = { GEOIDS: intersectingPlaces };
+
+    console.log(JSON.stringify(intersectingPlaces));
     fetch('http://localhost:3000/save-phoenix-data', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify(intersectingPlaces),
+      body: JSON.stringify(dataToSave),
     })
       .then(response => {
         if (!response.ok) throw new Error('Failed to save data');
@@ -278,4 +320,5 @@ initializeMap();
 document.getElementById('incomeBtn').addEventListener('click', () => { applyColors(incomeDataURL, "Median Income") });
 document.getElementById('unitsSoldBtn').addEventListener('click', () => { applyColors(priceAskedURL, "Units Sold") });
 document.getElementById('phoenixBtn').addEventListener('click', () => { showPhoenix() });
-  document.getElementById('writeBtn').addEventListener('click', () => { writeIntersects() });
+document.getElementById('writeBtn').addEventListener('click', () => { writeIntersects() });
+document.getElementById('getPhoenixUpdated').addEventListener('click', () => { loadPhoenixUpdated() });
