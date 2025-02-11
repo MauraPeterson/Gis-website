@@ -5,6 +5,8 @@ const priceAskedURL = "https://api.census.gov/data/2022/acs/acs5?get=NAME,B25085
 const geoFileType = ".geo.json";
 var intersectingPlaces;
 var geoJsonLayers = [];
+var selectedCity = "phoenix";
+let progress = document.getElementById('progressBar');
 
 var map;
 
@@ -39,23 +41,51 @@ function resetMap(lat, long, zoom) {
   }).addTo(map);
 }
 
-async function loadPhoenixUpdated() {
-  const phoenixUpResponse = await fetch("resources/updated/phoenix_updated.json");
-  const phoenixTractsData = await phoenixUpResponse.json();
+async function getDataFromFile(filename) {
+  try {
 
-  const CensusTractResponse = await fetch("resources/census-tracts/AZ.json");
-  const censusTractsData = await CensusTractResponse.json();
+    const response = await fetch(filename);
 
-  const phoenixResponse = await fetch("resources/cities/phoenix.json");
-  const phoenixBoundaryData = await phoenixResponse.json();
-
-  censusTractsData.features.forEach(feature => {
-    if (phoenixTractsData.GEOIDS.includes(feature.properties.GEOID)) {
-      addFeature(feature, phoenixBoundaryData);
-
+    if (!response.ok) {
+      console.error(`Error: ${response.status} - ${response.statusText}`);
+      return null;
     }
-  });
 
+    const data = await response.json();
+
+    return data;
+  } catch (error) {
+    return null;
+  }
+}
+
+async function load_updatedTractsInCity(cityname, originalCensusFileName) {
+  try {
+
+    const tractsData = await getDataFromFile(`resources/updated/${cityname}_updated.json`);
+
+    if (tractsData == null) {
+      console.log("First time load. This may take up to 5 minutes. Future loads will be instant.");
+      return false;
+    }
+
+    const censusTractsData = await getDataFromFile(originalCensusFileName);
+    const cityBoundaryData = await getDataFromFile(`resources/cities/${cityname}.json`);
+
+    if (!tractsData || !censusTractsData || !cityBoundaryData) {
+      return false;
+    }
+
+    censusTractsData.features.forEach(feature => {
+      if (tractsData.GEOIDS.includes(feature.properties.GEOID)) {
+        addFeature(feature, cityBoundaryData);
+      }
+    });
+
+    return true;
+  } catch (error) {
+    return false;
+  }
 }
 
 function addFeature(features, regionData) {
@@ -78,42 +108,49 @@ function addFeature(features, regionData) {
   }).addTo(map);
 }
 
-// Function to check if a tract intersects with the Phoenix boundary
-function intersects(tractGeometry, phoenixBoundaryData) {
+// Function to check if a tract intersects with the city boundary
+function intersects(tractGeometry, cityBoundaryData) {
   const tractCoordinates = tractGeometry.coordinates[0];
   // Check if the tract has enough coordinates
   if (tractCoordinates.length < 4 || tractGeometry.type !== "Polygon") {
     console.warn('Tract has insufficient coordinates:', tractCoordinates);
     return false; // Skip this tract
   } 
-  const phoenixPolygon = turf.multiPolygon(phoenixBoundaryData.features[0].geometry.coordinates);
+  var cityPolygon;
+  if (cityBoundaryData.features[0].geometry.type == "Polygon") {
+    cityPolygon = turf.polygon(cityBoundaryData.features[0].geometry.coordinates);
+  } else {
+    cityPolygon = turf.multiPolygon(cityBoundaryData.features[0].geometry.coordinates);
+  }
+
   const tractPolygon = turf.polygon([tractCoordinates]);
-  const doesIntersect = turf.booleanContains(phoenixPolygon, tractPolygon) || turf.booleanOverlap(phoenixPolygon, tractPolygon);
+  const doesIntersect = turf.booleanContains(cityPolygon, tractPolygon) || turf.booleanOverlap(cityPolygon, tractPolygon);
+  
   return doesIntersect;
 }
 
-async function showPhoenix() {
-  resetMap(33.5, -112, 10);
-  try {
-    console.log("Loading Phoenix boundary...");
-    const phoenixResponse = await fetch("resources/cities/phoenix.json");
-    const phoenixBoundaryData = await phoenixResponse.json();
-
-    // Add Phoenix boundary to the map
-    const phoenixLayer = L.geoJSON(phoenixBoundaryData).addTo(map);
+async function showCityCensusTracts(cityBoundaryData, censusTractFile, cityname) {
+  var city_updatedFileExists = await load_updatedTractsInCity(cityname, censusTractFile);
+  if (city_updatedFileExists) {
+    console.log(city_updatedFileExists);
+    return;
+  }
+  try { 
 
     console.log("Loading census tracts...");
-    const censusResponse = await fetch('resources/census-tracts/AZ.json'); // Path to your census tracts GeoJSON
-    const censusTractsData = await censusResponse.json();
-    var azCensusTractCount = 0;
-    var phoenixCensusTractCount = 0;
+    const censusTractsData = await getDataFromFile(censusTractFile);
+    console.log(censusTractFile)
+    console.log(cityBoundaryData.features)
+    var stateCensusTractCount = 0;
+    var cityCensusTractCount = 0;
     const intersectingTracts = [];
-
-    // Create a layer for the census tracts that overlap with Phoenix
+    // Create a layer for the census tracts that overlap with the city
     const overlappingTracts = L.geoJSON(censusTractsData, {
       filter: function (feature) {
-        azCensusTractCount++;
-        return intersects(feature.geometry, phoenixBoundaryData);
+        stateCensusTractCount++;
+        console.log((stateCensusTractCount / 4773) * 100);
+        progress.value = 10;
+        return intersects(feature.geometry, cityBoundaryData);
       },
       style: function (feature) {
 
@@ -127,29 +164,51 @@ async function showPhoenix() {
       onEachFeature: function (feature, layer) {
         console.log(feature.properties.GEOID);
         intersectingTracts.push(feature.properties.GEOID);
-        phoenixCensusTractCount++;
+        cityCensusTractCount++;
         layer.bindPopup(feature.properties.name || 'No name available'); // Ensure there's a fallback
       }
     }).addTo(map);
-    console.log("AZ Census Tract Count: " + azCensusTractCount);
-    console.log("Phoenix Census Tract Count: " + phoenixCensusTractCount);
-    console.log("Phoenix census tracts loaded successfully.");
-    phoenixBoundaryData.intersectingTractIds = intersectingTracts;
+    console.log("State Census Tract Count: " + stateCensusTractCount);
+    console.log("City Census Tract Count: " + cityCensusTractCount);
+    console.log("City census tracts loaded successfully.");
+    cityBoundaryData.intersectingTractIds = intersectingTracts;
     console.log(intersectingTracts);
     intersectingPlaces = intersectingTracts;
+
+    writeIntersects(cityname);
   } catch (error) {
-    console.error('Error loading Phoenix or census tracts:', error);
+    console.error('Error loading city or census tracts:', error);
   }
 }
 
-async function writeIntersects() {
+async function showCity(censusTract, cityname, stateCode) {
+  resetMap(33, -84, 4)
+  try {
+    console.log(`Loading ${cityname} boundary...`);
+    const cityResponse = await fetch(`resources/cities/${cityname}.json`);
+    const cityBoundaryData = await cityResponse.json();
+
+    // Add city boundary to the map
+    const cityLayer = L.geoJSON(cityBoundaryData).addTo(map);
+
+    if (censusTract) {
+      showCityCensusTracts(cityBoundaryData, `resources/census-tracts/${stateCode}.json`, cityname);
+    }
+  } catch (error) {
+    console.error('Error loading city or census tracts:', error);
+  }
+}
+
+
+
+async function writeIntersects(city) {
   try {
 
     const dataToSave = { GEOIDS: intersectingPlaces };
 
     console.log(JSON.stringify(intersectingPlaces));
-    fetch('http://localhost:3000/save-phoenix-data', {
-      method: 'POST',
+    fetch(`http://localhost:3000/save-city-blockgroups/${encodeURIComponent(city)}`, {
+      method: 'POST',           
       headers: {
         'Content-Type': 'application/json',
       },
@@ -314,11 +373,16 @@ function getColor(data, max, min) {
          '#FFEDA0'; // Light yellow
 }
 
+  function updateSelectedCity(cityname){
+    selectedCity = cityname.toLowerCase();
+  }
+
 initializeMap();
 // Apply colors based on income after all GeoJSON is loaded
 // Apply colors based on income after all GeoJSON is loaded
 document.getElementById('incomeBtn').addEventListener('click', () => { applyColors(incomeDataURL, "Median Income") });
 document.getElementById('unitsSoldBtn').addEventListener('click', () => { applyColors(priceAskedURL, "Units Sold") });
-document.getElementById('phoenixBtn').addEventListener('click', () => { showPhoenix() });
-document.getElementById('writeBtn').addEventListener('click', () => { writeIntersects() });
-document.getElementById('getPhoenixUpdated').addEventListener('click', () => { loadPhoenixUpdated() });
+document.getElementById('phoenixBtn').addEventListener('click', () => { showCity(true, selectedCity, "AZ") });
+document.getElementById('writeBtn').addEventListener('click', () => { writeIntersects(selectedCity) });
+document.getElementById('getPhoenixUpdated').addEventListener('click', () => { load_updatedTractsInCity("phoenix", "resources/census-tracts/AZ.json") });
+document.getElementById('city-select').addEventListener('change', () => { updateSelectedCity(document.getElementById("city-select").value) });

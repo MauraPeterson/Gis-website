@@ -18,4 +18,19 @@ app.post('/save-phoenix-data', (req, res) => {
   }); 
 });
 
+app.post('/save-city-blockgroups', (req, res) => {
+  const { city } = req.params;
+  const data = req.body;
+  console.log(city);
+  fs.writeFile(`../resources/updated/${city}_updated.json`, JSON.stringify(data, null, 2), (err) => {
+
+    if (err) {
+      console.error('Error writing data:', err);
+      res.status(500).send(`Failed to save data for ${city}`);
+    } else {
+      res.send('Data saved successfully');
+    }
+  }); 
+});
+
 app.listen(3000, () => console.log('Server running on http://localhost:3000'));
