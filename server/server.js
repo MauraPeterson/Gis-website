@@ -18,10 +18,11 @@ app.post('/save-phoenix-data', (req, res) => {
   }); 
 });
 
-app.post('/save-city-blockgroups', (req, res) => {
-  const { city } = req.params;
+app.post('/save-city-blockgroups/', (req, res) => {
+  var city = req.query['city'];
   const data = req.body;
-  console.log(city);
+  
+
   fs.writeFile(`../resources/updated/${city}_updated.json`, JSON.stringify(data, null, 2), (err) => {
 
     if (err) {
@@ -29,6 +30,7 @@ app.post('/save-city-blockgroups', (req, res) => {
       res.status(500).send(`Failed to save data for ${city}`);
     } else {
       res.send('Data saved successfully');
+      console.log(city+"_updated.json added");
     }
   }); 
 });

@@ -6,7 +6,7 @@ const geoFileType = ".geo.json";
 var intersectingPlaces;
 var geoJsonLayers = [];
 var selectedCity = "phoenix";
-let progress = document.getElementById('progressBar');
+
 
 var map;
 
@@ -149,8 +149,9 @@ async function showCityCensusTracts(cityBoundaryData, censusTractFile, cityname)
       filter: function (feature) {
         stateCensusTractCount++;
         console.log((stateCensusTractCount / 4773) * 100);
-        progress.value = 10;
+        
         return intersects(feature.geometry, cityBoundaryData);
+        
       },
       style: function (feature) {
 
@@ -181,12 +182,22 @@ async function showCityCensusTracts(cityBoundaryData, censusTractFile, cityname)
   }
 }
 
+function getBoundaryCenter(boundaryData) {
+  const lat = Number(boundaryData.features[0].properties.INTPTLAT)
+  const long = Number(boundaryData.features[0].properties.INTPTLON)
+  return [lat, long];
+}
+
 async function showCity(censusTract, cityname, stateCode) {
-  resetMap(33, -84, 4)
+  resetMap(+35.1852121, -111.6206977, 7)
   try {
     console.log(`Loading ${cityname} boundary...`);
     const cityResponse = await fetch(`resources/cities/${cityname}.json`);
     const cityBoundaryData = await cityResponse.json();
+    const [ lat, long ] = getBoundaryCenter(cityBoundaryData);
+    console.log(long);
+    resetMap(lat, long, 9)
+    console.log(lat, long);
 
     // Add city boundary to the map
     const cityLayer = L.geoJSON(cityBoundaryData).addTo(map);
@@ -207,8 +218,10 @@ async function writeIntersects(city) {
     const dataToSave = { GEOIDS: intersectingPlaces };
 
     console.log(JSON.stringify(intersectingPlaces));
-    fetch(`http://localhost:3000/save-city-blockgroups/${encodeURIComponent(city)}`, {
-      method: 'POST',           
+    const url2 = `http://localhost:3000/save-city-blockgroups?city=${city}`;
+    console.log(url2);
+    fetch(url2, {
+      method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
@@ -238,8 +251,8 @@ function loadCounties(event) {
   var counties = event.target.feature.properties.counties;
   console.log(event);
   for (var i = 0; i < counties.length; i++) {
-    console.log("resources/world.geo.json-master/countries/" + event.target.feature.properties.country + "/" + event.target.feature.id + "/" + counties[i].name + geoFileType);
-    loadGeoJSON("resources/world.geo.json-master/countries/" + event.target.feature.properties.country + "/" + event.target.feature.id + "/" + counties[i].name + geoFileType);
+    console.log("resources/world.geo.json-master/countries/" + event.target.feature.properties.country + "/" + event.target.feature.properties.state_code + "/" + counties[i] + geoFileType);
+    loadGeoJSON("resources/world.geo.json-master/countries/" + event.target.feature.properties.country + "/" + event.target.feature.properties.state_code + "/" + counties[i] + geoFileType);
   }
 }
 
@@ -247,6 +260,7 @@ function layerHandler(e) {
   var event = e;
   console.log(event.target.feature.properties.kind);
   console.log(event);
+  console.log(event.target.feature.properties.kind == "county");
   var lat = event.latlng.lat;
   var long = event.latlng.lng;
   var zoom = 3;
@@ -254,11 +268,15 @@ function layerHandler(e) {
   geoJsonLayers = [];
   if (event.target.feature.properties.kind == "Country") {
     loadStates(event);
-  } else if (event.target.feature.properties.kind == "State") {
+  } else if (event.target.feature.id && event.target.feature.id.includes("USA-")) {
     console.log("State");
     loadCounties(event)
   } else if (event.target.feature.properties.kind == "county") {
-    loadGeoJSON('resources/census-tracts/AZ.json');
+    console.log("County");
+    console.log(event.target.feature.properties.state);
+    console.log(event.target.feature.properties.name);
+    console.log(`resources/census-tracts/${event.target.feature.properties.state}/${event.target.feature.properties.name}.geo.json`);
+    loadGeoJSON(`resources/census-tracts/${event.target.feature.properties.state}/${event.target.feature.properties.name}.geo.json`);
   } else {
     console.log("resources/world.geo.json-master/countries/" + event.target.feature.id + geoFileType);
     loadGeoJSON("resources/world.geo.json-master/countries/" + event.target.feature.id + geoFileType);
@@ -382,7 +400,6 @@ initializeMap();
 // Apply colors based on income after all GeoJSON is loaded
 document.getElementById('incomeBtn').addEventListener('click', () => { applyColors(incomeDataURL, "Median Income") });
 document.getElementById('unitsSoldBtn').addEventListener('click', () => { applyColors(priceAskedURL, "Units Sold") });
-document.getElementById('phoenixBtn').addEventListener('click', () => { showCity(true, selectedCity, "AZ") });
+document.getElementById('city-blockBtn').addEventListener('click', () => { showCity(true, selectedCity, "AZ") });
 document.getElementById('writeBtn').addEventListener('click', () => { writeIntersects(selectedCity) });
-document.getElementById('getPhoenixUpdated').addEventListener('click', () => { load_updatedTractsInCity("phoenix", "resources/census-tracts/AZ.json") });
 document.getElementById('city-select').addEventListener('change', () => { updateSelectedCity(document.getElementById("city-select").value) });
